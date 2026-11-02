@@ -1,4 +1,5 @@
 import test, { before, after } from "node:test";
+import vm from "node:vm";
 import assert from "node:assert/strict";
 import { BothyError } from "../index.js";
 import { env } from "./helpers.js";
@@ -15,7 +16,7 @@ before(async () => {
 
 after(async () => {
   await db.close();
-  e.cleanup();
+  await e.cleanup();
 });
 
 let n = 0;
@@ -162,4 +163,27 @@ test("arrays with holes are rejected", async () => {
 test("an object with a null prototype is a plain object", async () => {
   const doc = Object.assign(Object.create(null), { a: 1 });
   assert.deepStrictEqual(await roundTrip(doc), { a: 1 });
+});
+
+test("plain objects from another realm are accepted, other prototypes still are not", async () => {
+  const doc = vm.runInNewContext("({ a: 1, nested: { b: [2, { c: 3 }] } })");
+  assert.notEqual(Object.getPrototypeOf(doc), Object.prototype);
+  assert.deepStrictEqual(await roundTrip(doc), { a: 1, nested: { b: [2, { c: 3 }] } });
+  for (const [name, code] of [
+    ["Date", "new Date()"],
+    ["Map", "new Map()"],
+    ["class instance", "new (class A {})()"],
+  ]) {
+    await assert.rejects(notes.put("x", { v: vm.runInNewContext(code) }), invalid, name);
+  }
+});
+
+test("a caller's own exception is never turned into a BothyError, whatever its message says", async () => {
+  const boom = new Error("bothy:Internal:not ours");
+  const doc = {
+    get x() {
+      throw boom;
+    },
+  };
+  await assert.rejects(notes.put("x", doc), (err) => err === boom);
 });

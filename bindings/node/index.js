@@ -31,7 +31,7 @@ const ARGUMENT_CODES = new Set([
 function translate(err) {
   if (err instanceof BothyError) return err;
   const message = err && typeof err.message === "string" ? err.message : "";
-  const m = /^bothy:([A-Za-z]+):([\s\S]*)$/.exec(message);
+  const m = err && err.code === "GenericFailure" ? /^bothy:([A-Za-z]+):([\s\S]*)$/.exec(message) : null;
   if (m && KINDS.has(m[1])) return new BothyError(m[1], m[2]);
   if (err && ARGUMENT_CODES.has(err.code)) return new BothyError("InvalidInput", message);
   if (err && err.code === "GenericFailure") return new BothyError("Internal", message);

@@ -9,7 +9,7 @@ async function pair(t) {
   const b = await e.open("b");
   t.after(async () => {
     await Promise.all([a.close(), b.close()]);
-    e.cleanup();
+    await e.cleanup();
   });
   const id = await a.initOrJoin();
   assert.equal(await b.initOrJoin(), id);

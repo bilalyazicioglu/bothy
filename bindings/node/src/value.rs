@@ -182,14 +182,13 @@ impl Reader {
         Ok(Value::Array(items))
     }
 
-    unsafe fn plain_object(&self, v: sys::napi_value, depth: usize) -> Result<Value> {
-        let env = self.env;
+    unsafe fn prototype_of(&self, v: sys::napi_value) -> Result<sys::napi_value> {
         let mut proto = ptr::null_mut();
         let argv = [v];
         check(
             unsafe {
                 sys::napi_call_function(
-                    env,
+                    self.env,
                     self.reflect,
                     self.get_prototype_of,
                     1,
@@ -199,17 +198,34 @@ impl Reader {
             },
             "Reflect.getPrototypeOf",
         )?;
+        Ok(proto)
+    }
+
+    unsafe fn is_null(&self, v: sys::napi_value) -> Result<bool> {
         let mut ty = 0;
         check(
-            unsafe { sys::napi_typeof(env, proto, &mut ty) },
+            unsafe { sys::napi_typeof(self.env, v, &mut ty) },
             "napi_typeof",
         )?;
-        let mut plain = ty == ValueType::Null as sys::napi_valuetype;
+        Ok(ty == ValueType::Null as sys::napi_valuetype)
+    }
+
+    unsafe fn plain_object(&self, v: sys::napi_value, depth: usize) -> Result<Value> {
+        let env = self.env;
+        let proto = unsafe { self.prototype_of(v)? };
+        let mut plain = unsafe { self.is_null(proto)? };
         if !plain {
             check(
                 unsafe { sys::napi_strict_equals(env, proto, self.object_proto, &mut plain) },
                 "napi_strict_equals",
             )?;
+        }
+        if !plain {
+            // `Object.prototype` of another realm (`node:vm`, Jest) is not ours, but it is the
+            // one prototype in the chain that has no prototype itself. A class, `Date` or `Map`
+            // prototype always has one.
+            let parent = unsafe { self.prototype_of(proto)? };
+            plain = unsafe { self.is_null(parent)? };
         }
         if !plain {
             return Err(invalid_input(
