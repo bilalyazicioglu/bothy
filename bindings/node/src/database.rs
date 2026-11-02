@@ -52,6 +52,40 @@ impl DbSlot {
     }
 }
 
+/// What one `sync()` did (the same fields as the Python package's report).
+#[napi(object)]
+pub struct SyncReport {
+    pub pushed_ops: u32,
+    pub segments_up: u32,
+    pub segments_down: u32,
+    pub pulled_ops: u32,
+    pub changed_docs: u32,
+    pub snapshots_down: u32,
+    pub snapshots_up: u32,
+    pub password_changed: bool,
+    pub skipped: Vec<String>,
+}
+
+fn count(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+impl From<bothy::SyncReport> for SyncReport {
+    fn from(r: bothy::SyncReport) -> Self {
+        Self {
+            pushed_ops: count(r.pushed_ops),
+            segments_up: count(r.segments_up),
+            segments_down: count(r.segments_down),
+            pulled_ops: count(r.pulled_ops),
+            changed_docs: count(r.changed_docs),
+            snapshots_down: count(r.snapshots_down),
+            snapshots_up: count(r.snapshots_up),
+            password_changed: r.password_changed,
+            skipped: r.skipped,
+        }
+    }
+}
+
 #[napi]
 pub struct Database {
     slot: DbSlot,
@@ -85,6 +119,13 @@ impl Database {
     pub async fn init_or_join(&self) -> Result<String> {
         let db = self.slot.get()?;
         Ok(db.init_or_join().await.map_err(from_engine)?.to_hex())
+    }
+
+    /// Pushes local changes and pulls remote ones.
+    #[napi]
+    pub async fn sync(&self) -> Result<SyncReport> {
+        let db = self.slot.get()?;
+        Ok(db.sync().await.map_err(from_engine)?.into())
     }
 
     /// A collection of documents. The name is checked now; the database may be closed later.

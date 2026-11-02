@@ -57,11 +57,31 @@ export class Collection {
   get(id: string): Promise<Document | null>;
 }
 
+/** What one `sync()` did. */
+export interface SyncReport {
+  /** Local operations packed into new files. */
+  pushedOps: number;
+  segmentsUp: number;
+  segmentsDown: number;
+  /** Operations in the files that were downloaded and applied. */
+  pulledOps: number;
+  /** Documents whose visible content changed because of remote operations. */
+  changedDocs: number;
+  snapshotsDown: number;
+  snapshotsUp: number;
+  /** Another device changed the password of this encrypted database. */
+  passwordChanged: boolean;
+  /** Remote files that were skipped because they failed validation. */
+  skipped: string[];
+}
+
 export class Database {
   collection(name: string): Collection;
   static open(options: OpenOptions): Promise<Database>;
   /** Creates the database on the remote or joins the one that is there; returns its id (hex). */
   initOrJoin(): Promise<string>;
+  /** Pushes local changes and pulls remote ones. */
+  sync(): Promise<SyncReport>;
   /** Releases the local database. Calling it again is fine. */
   close(): Promise<void>;
 }

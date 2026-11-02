@@ -88,6 +88,10 @@ export class Database {
     return call(() => this.#native.initOrJoin());
   }
 
+  sync() {
+    return call(() => this.#native.sync());
+  }
+
   close() {
     return call(() => this.#native.close());
   }
