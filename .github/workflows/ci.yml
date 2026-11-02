@@ -50,6 +50,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: bindings/node/Cargo.toml
 
   cross:
     name: Cross build (${{ matrix.target }})
@@ -174,6 +177,40 @@ jobs:
           name: wheel-${{ matrix.target }}
           path: bindings/python/dist/*.whl
           retention-days: 7
+
+  node:
+    name: Node (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: bindings/node
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: bindings/node/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            bindings/node
+            .
+      - run: cargo fmt --check
+      - run: cargo clippy --locked -- -D warnings
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm pack --dry-run
 
   js:
     name: JavaScript

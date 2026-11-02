@@ -14,6 +14,7 @@ how the repository is laid out, how to build and test each part, and how changes
 | `crates/bothy-conformance` | generates and checks `spec/vectors` |
 | `bindings/flutter` | the Flutter package (flutter_rust_bridge) |
 | `bindings/python` | the Python package (pyo3, maturin) |
+| `bindings/node` | the Node.js package (napi-rs), early; not published yet |
 | `examples/` | the Flutter demo app, the robot agent, two-machine CLI setup |
 | `site/` | the documentation site, <https://bothysync.dev> |
 | `spec/vectors` | conformance vectors for other implementations |
@@ -33,6 +34,7 @@ crates/bothy-ffi/tests/run_smoke.sh                         # C smoke test
 cargo deny check                                            # licences and advisories
 
 cd bindings/python && maturin develop --release && python -m unittest discover -s tests
+cd bindings/node && npm ci && npm run build && npm test
 cd bindings/flutter && cargo build --release --manifest-path rust/Cargo.toml && flutter test
 cd site && npm ci && npm run build && npm run check-links
 ```
