@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { env } from "./helpers.js";
 
-const index = fileURLToPath(new URL("../index.js", import.meta.url));
+// A bare Windows path (`D:\\...`) is not a valid ESM specifier, so the child gets a file:// URL.
+const index = new URL("../index.js", import.meta.url).href;
 
 test("the process exits by itself after close()", async (t) => {
   const e = env();
