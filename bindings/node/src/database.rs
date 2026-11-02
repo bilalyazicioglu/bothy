@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use napi_derive::napi;
 
+use crate::collection::Collection;
 use crate::error::{Result, from_engine, invalid_input};
 
 /// A folder shared by the devices (a local or synced directory).
@@ -69,7 +70,9 @@ pub async fn open_database(
     if let Some(name) = &device_name {
         config = config.device_name(name);
     }
-    let db = bothy::Database::open(config, remote).await.map_err(from_engine)?;
+    let db = bothy::Database::open(config, remote)
+        .await
+        .map_err(from_engine)?;
     Ok(Database {
         slot: DbSlot(Arc::new(RwLock::new(Some(db)))),
     })
@@ -82,6 +85,16 @@ impl Database {
     pub async fn init_or_join(&self) -> Result<String> {
         let db = self.slot.get()?;
         Ok(db.init_or_join().await.map_err(from_engine)?.to_hex())
+    }
+
+    /// A collection of documents. The name is checked now; the database may be closed later.
+    #[napi]
+    pub fn collection(&self, name: String) -> Result<Collection> {
+        bothy::CollectionName::new(&name).map_err(from_engine)?;
+        Ok(Collection {
+            slot: self.slot.clone(),
+            name,
+        })
     }
 
     /// Releases the local database. Calling it again is fine.

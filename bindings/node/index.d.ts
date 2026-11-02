@@ -37,7 +37,28 @@ export interface OpenOptions {
   deviceName?: string;
 }
 
+/** What a document field can hold. Integers beyond 2^53 are `bigint`, bytes are `Uint8Array`. */
+export type Value =
+  | null
+  | boolean
+  | number
+  | bigint
+  | string
+  | Uint8Array
+  | Value[]
+  | { [key: string]: Value };
+
+export type Document = { [key: string]: Value };
+
+export class Collection {
+  /** Writes a whole document; fields not in `doc` are removed. Resolves to whether anything changed. */
+  put(id: string, doc: Document): Promise<boolean>;
+  /** The document, or `null` if there is none. */
+  get(id: string): Promise<Document | null>;
+}
+
 export class Database {
+  collection(name: string): Collection;
   static open(options: OpenOptions): Promise<Database>;
   /** Creates the database on the remote or joins the one that is there; returns its id (hex). */
   initOrJoin(): Promise<string>;

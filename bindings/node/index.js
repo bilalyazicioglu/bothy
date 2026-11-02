@@ -26,9 +26,10 @@ function translate(err) {
   return new BothyError("Internal", err && err.message ? err.message : String(err));
 }
 
-async function call(promise) {
+/** Runs a native call; sync throws (argument conversion) and rejections both become BothyError. */
+async function call(run) {
   try {
-    return await promise;
+    return await run();
   } catch (err) {
     throw translate(err);
   }
@@ -44,6 +45,22 @@ export class FolderRemote extends native.FolderRemote {
   }
 }
 
+export class Collection {
+  #native;
+
+  constructor(nativeCollection) {
+    this.#native = nativeCollection;
+  }
+
+  put(id, doc) {
+    return call(() => this.#native.put(id, doc));
+  }
+
+  get(id) {
+    return call(() => this.#native.get(id));
+  }
+}
+
 export class Database {
   #native;
 
@@ -55,16 +72,24 @@ export class Database {
     if (!(remote instanceof FolderRemote)) {
       throw new BothyError("InvalidInput", "remote must be a FolderRemote");
     }
-    const db = await call(native.openDatabase(path, appId, remote.path, deviceName ?? null));
+    const db = await call(() => native.openDatabase(path, appId, remote.path, deviceName ?? null));
     return new Database(db);
   }
 
+  collection(name) {
+    try {
+      return new Collection(this.#native.collection(name));
+    } catch (err) {
+      throw translate(err);
+    }
+  }
+
   initOrJoin() {
-    return call(this.#native.initOrJoin());
+    return call(() => this.#native.initOrJoin());
   }
 
   close() {
-    return call(this.#native.close());
+    return call(() => this.#native.close());
   }
 }
 
