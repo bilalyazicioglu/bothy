@@ -1,0 +1,28 @@
+[package]
+name = "bothy-node"
+version = "0.4.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Native module of the @bothy-sync/node package."
+publish = false
+
+[lib]
+name = "bothy_node"
+crate-type = ["cdylib"]
+
+[dependencies]
+bothy = { path = "../../crates/bothy" }
+napi = { version = "3", default-features = false, features = ["napi9", "async", "tokio_rt"] }
+napi-derive = "3"
+
+[build-dependencies]
+napi-build = "2"
+
+# Rust strips debug info from release builds by default. On macOS 27 that produces a .node
+# that dlopen rejects ("mis-aligned LINKEDIT string pool"), so keep the linker output as is.
+[profile.release]
+strip = "none"
+
+# Built by @napi-rs/cli, not part of the main workspace (napi's generated code needs `unsafe`).
+[workspace]

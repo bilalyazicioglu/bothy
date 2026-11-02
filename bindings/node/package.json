@@ -1,0 +1,35 @@
+{
+  "name": "@bothy-sync/node",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Node.js binding for Bothy, a serverless local-first sync engine that uses your own Google Drive as the transport. Early development.",
+  "keywords": ["sync", "local-first", "offline", "google-drive"],
+  "homepage": "https://github.com/bothy-sync/bothy#readme",
+  "bugs": "https://github.com/bothy-sync/bothy/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bothy-sync/bothy.git",
+    "directory": "bindings/node"
+  },
+  "license": "(MIT OR Apache-2.0)",
+  "author": "The Bothy Contributors",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "files": ["index.js", "index.d.ts", "native.cjs", "native.d.ts", "*.node", "LICENSE-MIT", "LICENSE-APACHE"],
+  "engines": {
+    "node": ">=22"
+  },
+  "napi": {
+    "binaryName": "bothy",
+    "targets": []
+  },
+  "scripts": {
+    "build": "napi build --platform --release --js native.cjs --dts native.d.ts -- --locked",
+    "build:debug": "napi build --platform --js native.cjs --dts native.d.ts -- --locked",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.0.0"
+  }
+}
