@@ -18,12 +18,24 @@ export class BothyError extends Error {
   }
 }
 
-/** Native errors carry the kind as a `bothy:<Kind>:<message>` prefix; anything else is a bug. */
+const ARGUMENT_CODES = new Set([
+  "InvalidArg", "StringExpected", "NumberExpected", "BooleanExpected",
+  "ObjectExpected", "ArrayExpected", "FunctionExpected", "BigintExpected",
+]);
+
+/**
+ * Native errors carry the kind as a `bothy:<Kind>:<message>` prefix. A napi argument error is
+ * `InvalidInput`; any other native failure is `Internal`. Anything else is the caller's own
+ * exception (a throwing getter or Proxy trap) and passes through untouched.
+ */
 function translate(err) {
   if (err instanceof BothyError) return err;
-  const m = /^bothy:([A-Za-z]+):([\s\S]*)$/.exec(err && err.message ? err.message : "");
+  const message = err && typeof err.message === "string" ? err.message : "";
+  const m = /^bothy:([A-Za-z]+):([\s\S]*)$/.exec(message);
   if (m && KINDS.has(m[1])) return new BothyError(m[1], m[2]);
-  return new BothyError("Internal", err && err.message ? err.message : String(err));
+  if (err && ARGUMENT_CODES.has(err.code)) return new BothyError("InvalidInput", message);
+  if (err && err.code === "GenericFailure") return new BothyError("Internal", message);
+  return err;
 }
 
 /** Runs a native call; sync throws (argument conversion) and rejections both become BothyError. */
@@ -68,7 +80,11 @@ export class Database {
     this.#native = nativeDb;
   }
 
-  static async open({ path, appId, remote, deviceName }) {
+  static async open(options) {
+    if (options === null || typeof options !== "object") {
+      throw new BothyError("InvalidInput", "open needs an options object");
+    }
+    const { path, appId, remote, deviceName } = options;
     if (!(remote instanceof FolderRemote)) {
       throw new BothyError("InvalidInput", "remote must be a FolderRemote");
     }

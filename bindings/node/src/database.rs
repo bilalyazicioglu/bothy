@@ -1,11 +1,13 @@
 //! `FolderRemote` and `Database`.
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
+use napi::tokio::sync::{OwnedRwLockReadGuard, RwLock};
 use napi_derive::napi;
 
 use crate::collection::Collection;
 use crate::error::{Result, from_engine, invalid_input};
+use crate::value::Str;
 
 /// A folder shared by the devices (a local or synced directory).
 #[napi]
@@ -16,7 +18,8 @@ pub struct FolderRemote {
 #[napi]
 impl FolderRemote {
     #[napi(constructor)]
-    pub fn new(path: String) -> Result<Self> {
+    pub fn new(path: Str) -> Result<Self> {
+        let path = path.0;
         // The engine would take "" as the working directory and sync into it silently.
         if path.is_empty() {
             return Err(invalid_input("remote folder path is empty"));
@@ -32,23 +35,39 @@ impl FolderRemote {
     }
 }
 
-/// The engine handle shared by a `Database` and its collections. `close()` empties it, so
-/// nothing keeps the local database open afterwards.
-#[derive(Clone, Default)]
+/// The engine handle shared by a `Database` and its collections.
+///
+/// Every operation holds a read guard while it runs. `close()` takes the write lock, so it
+/// waits for operations in flight, then drops the engine and with it the local database lock.
+#[derive(Clone)]
 pub(crate) struct DbSlot(Arc<RwLock<Option<bothy::Database>>>);
 
+/// An engine handle held for the duration of one operation.
+pub(crate) struct InUse(OwnedRwLockReadGuard<Option<bothy::Database>>);
+
+impl InUse {
+    pub(crate) fn db(&self) -> &bothy::Database {
+        self.0.as_ref().expect("checked when acquired")
+    }
+}
+
 impl DbSlot {
-    /// A handle to the engine for one call; fails once the database is closed.
-    pub(crate) fn get(&self) -> Result<bothy::Database> {
-        self.0
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
-            .ok_or_else(|| invalid_input("database is closed"))
+    fn new(db: bothy::Database) -> Self {
+        Self(Arc::new(RwLock::new(Some(db))))
     }
 
-    fn take(&self) -> Option<bothy::Database> {
-        self.0.write().unwrap_or_else(|e| e.into_inner()).take()
+    /// The engine for one operation; fails once the database is closed.
+    pub(crate) async fn acquire(&self) -> Result<InUse> {
+        let guard = self.0.clone().read_owned().await;
+        if guard.is_none() {
+            return Err(invalid_input("database is closed"));
+        }
+        Ok(InUse(guard))
+    }
+
+    /// Waits for operations in flight, then releases the engine.
+    async fn close(&self) {
+        drop(self.0.write().await.take());
     }
 }
 
@@ -94,21 +113,21 @@ pub struct Database {
 /// Opens (or creates) the local database. The facade's `Database.open` calls this.
 #[napi]
 pub async fn open_database(
-    path: String,
-    app_id: String,
-    remote_path: String,
-    device_name: Option<String>,
+    path: Str,
+    app_id: Str,
+    remote_path: Str,
+    device_name: Option<Str>,
 ) -> Result<Database> {
-    let remote = Arc::new(bothy::remote::FolderRemote::new(&remote_path).map_err(from_engine)?);
-    let mut config = bothy::Config::new(path, &app_id);
+    let remote = Arc::new(bothy::remote::FolderRemote::new(&remote_path.0).map_err(from_engine)?);
+    let mut config = bothy::Config::new(path.0, &app_id.0);
     if let Some(name) = &device_name {
-        config = config.device_name(name);
+        config = config.device_name(&name.0);
     }
     let db = bothy::Database::open(config, remote)
         .await
         .map_err(from_engine)?;
     Ok(Database {
-        slot: DbSlot(Arc::new(RwLock::new(Some(db)))),
+        slot: DbSlot::new(db),
     })
 }
 
@@ -117,31 +136,37 @@ impl Database {
     /// Creates the database on the remote or joins the one that is there; returns its id (hex).
     #[napi]
     pub async fn init_or_join(&self) -> Result<String> {
-        let db = self.slot.get()?;
-        Ok(db.init_or_join().await.map_err(from_engine)?.to_hex())
+        let open = self.slot.acquire().await?;
+        Ok(open
+            .db()
+            .init_or_join()
+            .await
+            .map_err(from_engine)?
+            .to_hex())
     }
 
     /// Pushes local changes and pulls remote ones.
     #[napi]
     pub async fn sync(&self) -> Result<SyncReport> {
-        let db = self.slot.get()?;
-        Ok(db.sync().await.map_err(from_engine)?.into())
+        let open = self.slot.acquire().await?;
+        Ok(open.db().sync().await.map_err(from_engine)?.into())
     }
 
     /// A collection of documents. The name is checked now; the database may be closed later.
     #[napi]
-    pub fn collection(&self, name: String) -> Result<Collection> {
-        bothy::CollectionName::new(&name).map_err(from_engine)?;
+    pub fn collection(&self, name: Str) -> Result<Collection> {
+        bothy::CollectionName::new(&name.0).map_err(from_engine)?;
         Ok(Collection {
             slot: self.slot.clone(),
-            name,
+            name: name.0,
         })
     }
 
-    /// Releases the local database. Calling it again is fine.
+    /// Waits for operations in flight, then releases the local database. Calling it again is
+    /// fine.
     #[napi]
     pub async fn close(&self) -> Result<()> {
-        drop(self.slot.take());
+        self.slot.close().await;
         Ok(())
     }
 }

@@ -82,6 +82,6 @@ export class Database {
   initOrJoin(): Promise<string>;
   /** Pushes local changes and pulls remote ones. */
   sync(): Promise<SyncReport>;
-  /** Releases the local database. Calling it again is fine. */
+  /** Waits for operations in flight, then releases the local database. Calling it again is fine. */
   close(): Promise<void>;
 }

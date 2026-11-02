@@ -29,6 +29,10 @@ const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 /// A whole document argument: a plain object.
 pub struct JsDoc(pub Value);
 
+/// A string argument (an id, a name, a path). Read as UTF-16, so a lone surrogate is an error
+/// and two different ids can never collapse into one through U+FFFD.
+pub struct Str(pub String);
+
 /// Any value, for results.
 pub struct JsValue(pub Value);
 
@@ -46,6 +50,8 @@ fn check(status: sys::napi_status, what: &str) -> Result<()> {
 struct Reader {
     env: sys::napi_env,
     object_proto: sys::napi_value,
+    reflect: sys::napi_value,
+    get_prototype_of: sys::napi_value,
 }
 
 impl Reader {
@@ -57,7 +63,15 @@ impl Reader {
         )?;
         let object = unsafe { get_named(env, global, "Object")? };
         let object_proto = unsafe { get_named(env, object, "prototype")? };
-        Ok(Self { env, object_proto })
+        // `Reflect.getPrototypeOf` looks through a Proxy; `napi_get_prototype` reports null.
+        let reflect = unsafe { get_named(env, global, "Reflect")? };
+        let get_prototype_of = unsafe { get_named(env, reflect, "getPrototypeOf")? };
+        Ok(Self {
+            env,
+            object_proto,
+            reflect,
+            get_prototype_of,
+        })
     }
 
     unsafe fn value(&self, v: sys::napi_value, depth: usize) -> Result<Value> {
@@ -171,9 +185,19 @@ impl Reader {
     unsafe fn plain_object(&self, v: sys::napi_value, depth: usize) -> Result<Value> {
         let env = self.env;
         let mut proto = ptr::null_mut();
+        let argv = [v];
         check(
-            unsafe { sys::napi_get_prototype(env, v, &mut proto) },
-            "napi_get_prototype",
+            unsafe {
+                sys::napi_call_function(
+                    env,
+                    self.reflect,
+                    self.get_prototype_of,
+                    1,
+                    argv.as_ptr(),
+                    &mut proto,
+                )
+            },
+            "Reflect.getPrototypeOf",
         )?;
         let mut ty = 0;
         check(
@@ -468,5 +492,27 @@ impl TypeName for JsValue {
 impl ToNapiValue for JsValue {
     unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
         unsafe { write(env, &val.0) }
+    }
+}
+
+impl TypeName for Str {
+    fn type_name() -> &'static str {
+        "string"
+    }
+    fn value_type() -> ValueType {
+        ValueType::String
+    }
+}
+
+impl ValidateNapiValue for Str {}
+
+impl FromNapiValue for Str {
+    unsafe fn from_napi_value(env: sys::napi_env, v: sys::napi_value) -> napi::Result<Self> {
+        let mut ty = 0;
+        check(unsafe { sys::napi_typeof(env, v, &mut ty) }, "napi_typeof")?;
+        if ty != ValueType::String as sys::napi_valuetype {
+            return Err(invalid_input("expected a string"));
+        }
+        Ok(Str(unsafe { string(env, v)? }))
     }
 }
