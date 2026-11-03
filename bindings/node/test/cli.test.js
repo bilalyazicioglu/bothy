@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { Database, FolderRemote } from "../index.js";
 import { APP, env } from "./helpers.js";
 
 const cli = process.env.BOTHY_CLI;
@@ -20,8 +19,9 @@ test("the CLI and the Node binding share a database", { skip: !cli && "BOTHY_CLI
   run("put", "missions", "from_cli", '{"goal": "dock"}');
   run("sync");
 
-  const db = await Database.open({ path: e.path("node"), appId: APP, remote: new FolderRemote(remote) });
-  t.after(() => db.close());
+  // e.open() tracks the database, so cleanup closes it before deleting the folder (Windows
+  // cannot delete open files, and t.after hooks run in the order they were registered).
+  const db = await e.open("node");
   assert.equal(await db.initOrJoin(), dbId);
   assert.deepStrictEqual(await db.collection("missions").get("from_cli"), { goal: "dock" });
   await db.collection("telemetry_logs").put("t1", { temp_c: 41.5 });
